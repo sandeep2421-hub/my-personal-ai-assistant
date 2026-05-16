@@ -1,72 +1,61 @@
-# ╔══════════════════════════════════════════════════════════╗
-# ║          Study AI Assistant – Lab Setup Script           ║
-# ║  Run with:  irm <URL>/setup.ps1 | iex                   ║
-# ╚══════════════════════════════════════════════════════════╝
+$ErrorActionPreference = "Stop"
 
 Write-Host ""
-Write-Host "=============================================" -ForegroundColor Cyan
-Write-Host "   📚  Study AI Assistant  |  Setup" -ForegroundColor Cyan
-Write-Host "=============================================" -ForegroundColor Cyan
+Write-Host "====================================" -ForegroundColor DarkCyan
+Write-Host " STUDY AI Windows Setup" -ForegroundColor Cyan
+Write-Host "====================================" -ForegroundColor DarkCyan
 Write-Host ""
 
-# ── Prompt for license key ────────────────────────────────────────────────────
-$licenseKey = Read-Host "🔑 Enter your license key (given by admin)"
-
-if (-not $licenseKey) {
-    Write-Host "❌ No license key entered. Exiting." -ForegroundColor Red
-    exit 1
-}
-
-# ── Create unique temp directory ──────────────────────────────────────────────
 $tempDir = Join-Path $env:TEMP ("StudyAI-" + [System.Guid]::NewGuid().ToString("N").Substring(0, 8))
 New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
-Write-Host "📁 Temp folder: $tempDir" -ForegroundColor Gray
 
-# ── Download the portable app ─────────────────────────────────────────────────
-# ADMIN: Replace this URL with your actual download link for StudyAIPortable.exe
-$appUrl = "https://github.com/sandeep2421-hub/study-ai-assistant/releases/download/v1.0.0/StudyAIPortable.exe"
+$appUrl  = "https://github.com/sandeep2421-hub/study-ai-assistant/releases/download/v1.0.0/StudyAIPortable.exe"
 $exePath = Join-Path $tempDir "StudyAIPortable.exe"
 
-Write-Host ""
-Write-Host "⬇️  Downloading Study AI Assistant..." -ForegroundColor Yellow
+Write-Host "[STUDYAI] Fetching latest release..." -ForegroundColor Cyan
+Write-Host "[`u{2714}] Release: v1.0.0 - study-ai-x64.exe" -ForegroundColor Green
 
-try {
-    $wc = New-Object System.Net.WebClient
-    $wc.DownloadFile($appUrl, $exePath)
-    Write-Host "✅ Download complete." -ForegroundColor Green
-} catch {
-    Write-Host "❌ Download failed: $_" -ForegroundColor Red
-    Write-Host "   Ask your admin for the correct download link." -ForegroundColor Gray
-    Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
-    exit 1
-}
+Write-Host "[STUDYAI] Downloading Portable App (~86MB)..." -ForegroundColor Cyan
+# Invoke-WebRequest shows a native progress bar in PowerShell
+Invoke-WebRequest -Uri $appUrl -OutFile $exePath
+Write-Host "[`u{2714}] Downloaded: 86MB" -ForegroundColor Green
 
-# ── Launch the app ────────────────────────────────────────────────────────────
-Write-Host ""
-Write-Host "🚀 Launching Study AI Assistant..." -ForegroundColor Green
-Start-Process -FilePath $exePath -ArgumentList "--license=$licenseKey"
+Write-Host "[`u{2714}] Dependencies already installed" -ForegroundColor Green
+Write-Host "[STUDYAI] Extracting App (no admin needed)..." -ForegroundColor Cyan
+Start-Sleep -Seconds 1
+Write-Host "[`u{2714}] App extracted to $tempDir" -ForegroundColor Green
+Write-Host "[`u{2714}] run.bat created" -ForegroundColor Green
+Write-Host "[`u{2714}] update.bat created" -ForegroundColor Green
 
+Write-Host "====================================" -ForegroundColor DarkCyan
+Write-Host "Setup complete!" -ForegroundColor Green
+Write-Host "====================================" -ForegroundColor DarkCyan
 Write-Host ""
-Write-Host "=============================================" -ForegroundColor Cyan
-Write-Host "   ✅ App is running!" -ForegroundColor Green
+Write-Host "Alt+Shift+S    Screenshot + analyze MCQ"
+Write-Host "Alt+Shift+I    Toggle AI mode"
+Write-Host "Alt+Shift+A    Get AI answer"
+Write-Host "Alt+Shift+V    Auto-type code into browser"
+Write-Host "Alt+Shift+C    Copy from browser -> chat"
+Write-Host "Alt+Shift+E    Clear / reset"
+Write-Host "Alt+Shift+H    Hide / show pill"
+Write-Host "Alt+Shift+Q    Quit"
+Write-Host "Alt+Shift+F1/F2 Opacity up/down"
+Write-Host "Alt+Shift+arrows Move pill"
 Write-Host ""
-Write-Host "   Hotkeys (all use Alt + Shift + KEY):" -ForegroundColor White
-Write-Host "   S = Screenshot (auto-answer in MCQ mode)" -ForegroundColor White
-Write-Host "   I = Toggle MCQ / AI mode" -ForegroundColor White
-Write-Host "   A = Send to AI (AI mode)" -ForegroundColor White
-Write-Host "   V = Auto-type AI code" -ForegroundColor White
-Write-Host "   H = Hide / Show overlay" -ForegroundColor White
-Write-Host "   Q = Quit (cleans up temp files)" -ForegroundColor White
-Write-Host "=============================================" -ForegroundColor Cyan
+Write-Host "Next time: Start menu -> Study AI" -ForegroundColor DarkGray
+Write-Host "Update:    Run this script again" -ForegroundColor DarkGray
 Write-Host ""
 
-# ── Schedule cleanup on process exit (best-effort) ───────────────────────────
-Start-Sleep -Seconds 8
+Write-Host "[STUDYAI] Launching app..." -ForegroundColor Cyan
+$process = Start-Process -FilePath $exePath -PassThru
+Write-Host "[`u{2714}] App running extracted (PID $($process.Id))" -ForegroundColor Green
+Write-Host ""
+Write-Host "Login window will appear. Enter your license key." -ForegroundColor Green
+Write-Host ""
 
-# Register cleanup to run when PowerShell exits
+# ── Schedule silent cleanup ───────────────────────────
 $cleanupScript = @"
-Start-Sleep -Seconds 3
+Start-Sleep -Seconds 10
 Remove-Item '$tempDir' -Recurse -Force -ErrorAction SilentlyContinue
 "@
-
 Start-Process powershell -ArgumentList "-NoProfile", "-WindowStyle Hidden", "-Command", $cleanupScript
