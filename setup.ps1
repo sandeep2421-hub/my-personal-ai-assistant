@@ -13,19 +13,18 @@ $appUrl  = "https://github.com/sandeep2421-hub/study-ai-assistant/releases/downl
 $exePath = Join-Path $tempDir "StudyAIPortable.exe"
 
 Write-Host "[STUDYAI] Fetching latest release..." -ForegroundColor Cyan
-Write-Host "[`u{2714}] Release: v1.0.0 - study-ai-x64.exe" -ForegroundColor Green
+Write-Host "[$([char]0x2714)] Release: v1.0.0 - study-ai-x64.exe" -ForegroundColor Green
 
 Write-Host "[STUDYAI] Downloading Portable App (~86MB)..." -ForegroundColor Cyan
-# Invoke-WebRequest shows a native progress bar in PowerShell
 Invoke-WebRequest -Uri $appUrl -OutFile $exePath
-Write-Host "[`u{2714}] Downloaded: 86MB" -ForegroundColor Green
+Write-Host "[$([char]0x2714)] Downloaded: 86MB" -ForegroundColor Green
 
-Write-Host "[`u{2714}] Dependencies already installed" -ForegroundColor Green
+Write-Host "[$([char]0x2714)] Dependencies already installed" -ForegroundColor Green
 Write-Host "[STUDYAI] Extracting App (no admin needed)..." -ForegroundColor Cyan
 Start-Sleep -Seconds 1
-Write-Host "[`u{2714}] App extracted to $tempDir" -ForegroundColor Green
-Write-Host "[`u{2714}] run.bat created" -ForegroundColor Green
-Write-Host "[`u{2714}] update.bat created" -ForegroundColor Green
+Write-Host "[$([char]0x2714)] App extracted to $tempDir" -ForegroundColor Green
+Write-Host "[$([char]0x2714)] run.bat created" -ForegroundColor Green
+Write-Host "[$([char]0x2714)] update.bat created" -ForegroundColor Green
 
 Write-Host "====================================" -ForegroundColor DarkCyan
 Write-Host "Setup complete!" -ForegroundColor Green
@@ -48,12 +47,11 @@ Write-Host ""
 
 Write-Host "[STUDYAI] Launching app..." -ForegroundColor Cyan
 $process = Start-Process -FilePath $exePath -PassThru
-Write-Host "[`u{2714}] App running extracted (PID $($process.Id))" -ForegroundColor Green
+Write-Host "[$([char]0x2714)] App running extracted (PID $($process.Id))" -ForegroundColor Green
 Write-Host ""
 Write-Host "Login window will appear. Enter your license key." -ForegroundColor Green
 Write-Host ""
 
-# ── Schedule silent cleanup ───────────────────────────
 $cleanupScript = @"
 Start-Sleep -Seconds 10
 Remove-Item '$tempDir' -Recurse -Force -ErrorAction SilentlyContinue
