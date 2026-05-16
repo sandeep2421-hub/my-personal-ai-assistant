@@ -24,7 +24,7 @@ Write-Host "📁 Temp folder: $tempDir" -ForegroundColor Gray
 
 # ── Download the portable app ─────────────────────────────────────────────────
 # ADMIN: Replace this URL with your actual download link for StudyAIPortable.exe
-$appUrl  = "https://YOUR-DIRECT-DOWNLOAD-LINK/StudyAIPortable.exe"
+$appUrl = "https://github.com/sandeep2421-hub/study-ai-assistant/releases/download/v1.0.0/StudyAIPortable.exe"
 $exePath = Join-Path $tempDir "StudyAIPortable.exe"
 
 Write-Host ""
