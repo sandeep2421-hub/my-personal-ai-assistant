@@ -16,8 +16,10 @@ Write-Host "[STUDYAI] Fetching latest release..." -ForegroundColor Cyan
 Write-Host "[$([char]0x2714)] Release: v1.0.0 - study-ai-x64.exe" -ForegroundColor Green
 
 Write-Host "[STUDYAI] Downloading Portable App (~86MB)..." -ForegroundColor Cyan
-Invoke-WebRequest -Uri $appUrl -OutFile $exePath
-Write-Host "[$([char]0x2714)] Downloaded: 86MB" -ForegroundColor Green
+# Start-BitsTransfer is much faster and shows a clean progress bar
+Import-Module BitsTransfer
+Start-BitsTransfer -Source $appUrl -Destination $exePath
+
 
 Write-Host "[$([char]0x2714)] Dependencies already installed" -ForegroundColor Green
 Write-Host "[STUDYAI] Extracting App (no admin needed)..." -ForegroundColor Cyan
