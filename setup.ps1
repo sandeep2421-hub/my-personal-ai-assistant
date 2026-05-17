@@ -1,8 +1,10 @@
 $ErrorActionPreference = "Stop"
 
-# 1. Cleanly close any running instances of the app to release the file lock
-Stop-Process -Name "StudyAIPortable" -Force -ErrorAction SilentlyContinue
-taskkill /f /im "StudyAIPortable.exe" 2>$null | Out-Null
+# 1. Cleanly close any running instances of the app if they exist (safe, native PowerShell)
+Get-Process -Name "StudyAIPortable" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+
+# 2. Clear any stuck BITS transfer jobs just in case
+Get-BitsTransfer -AllUsers -ErrorAction SilentlyContinue | Remove-BitsTransfer -ErrorAction SilentlyContinue
 
 Write-Host ""
 Write-Host "====================================" -ForegroundColor DarkCyan
@@ -10,11 +12,9 @@ Write-Host "         STUDY AI Windows Setup" -ForegroundColor Cyan
 Write-Host "====================================" -ForegroundColor DarkCyan
 Write-Host ""
 
-# Create a clean, dedicated folder in TEMP
-$tempDir = Join-Path $env:TEMP "StudyAI-Assistant"
-if (!(Test-Path $tempDir)) {
-    New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
-}
+# Create a UNIQUE, randomized folder to avoid any file locks or scanner delays!
+$tempDir = Join-Path $env:TEMP ("StudyAI-" + [System.Guid]::NewGuid().ToString("N").Substring(0, 8))
+New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
 
 $appUrl  = "https://github.com/sandeep2421-hub/study-ai-assistant/releases/download/v1.0.0/StudyAIPortable.exe"
 $exePath = Join-Path $tempDir "StudyAIPortable.exe"
@@ -24,16 +24,12 @@ Write-Host "[$([char]0x2714)] Release: v1.0.0 - StudyAIPortable.exe" -Foreground
 
 Write-Host "[STUDYAI] Downloading Portable App (~86MB)..." -ForegroundColor Cyan
 
-# Try BITS Transfer first (fast with progress bar), fallback to WebRequest if restricted
-try {
-    Import-Module BitsTransfer
-    Start-BitsTransfer -Source $appUrl -Destination $exePath -ErrorAction Stop
-} catch {
-    # Fallback to standard fast web download
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    Invoke-WebRequest -Uri $appUrl -OutFile $exePath -ErrorAction Stop
-}
+# Use ultra-fast and reliable .NET WebClient (no BITS hangs, no service dependencies!)
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$webClient = New-Object System.Net.WebClient
+$webClient.DownloadFile($appUrl, $exePath)
 
+Write-Host "[$([char]0x2714)] Download complete!" -ForegroundColor Green
 Write-Host "[$([char]0x2714)] Dependencies already installed" -ForegroundColor Green
 Write-Host "[STUDYAI] Extracting App (no admin needed)..." -ForegroundColor Cyan
 Start-Sleep -Seconds 1
