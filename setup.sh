@@ -56,14 +56,25 @@ if ! command -v xclip >/dev/null 2>&1; then
     fi
 fi
 
-# Automatically fetch custom API key pool from GitHub raw repo to make lab access instant and free!
-echo "[STUDYAI] Downloading custom API key pool configuration..."
-KEY_URL="https://raw.githubusercontent.com/sandeep2421-hub/study-ai-assistant/main/apikey.txt"
+# Securely load API key without public GitHub leaks
+KEY_PATH="$INSTALL_DIR/config/apikey.txt"
 mkdir -p "$INSTALL_DIR/config"
-if download_file "$KEY_URL" "$INSTALL_DIR/config/apikey.txt"; then
-    echo "[✔] API keys successfully installed next to the app"
-else
-    echo "[WARNING] Could not download custom API keys, falling back to default key."
+if [ ! -f "$KEY_PATH" ]; then
+    echo ""
+    echo -e "\e[33m==================================================\e[0m"
+    echo -e "\e[36m           STUDYAI SECURE API KEY SETUP\e[0m"
+    echo -e "\e[33m==================================================\e[0m"
+    echo " To prevent automatic Google revocation, do not upload keys to GitHub."
+    echo ""
+    read -p "👉 Please paste your personal Gemini API Key (or press Enter to skip): " pastedKey
+    if [ ! -z "$pastedKey" ]; then
+        echo "$pastedKey" > "$KEY_PATH"
+        echo -e "\e[32m[✔] API Key saved securely!\e[0m"
+    else
+        echo -e "\e[33m[!] Skipping custom key, falling back to default shared key.\e[0m"
+    fi
+    echo -e "\e[33m==================================================\e[0m"
+    echo ""
 fi
 
 # Set permissions

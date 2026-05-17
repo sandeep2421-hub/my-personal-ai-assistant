@@ -93,17 +93,28 @@ try {
     throw "Extraction failed: $_"
 }
 
-# Automatically fetch custom API key pool from GitHub raw repo to make lab access instant and free!
+# Securely load API key without public GitHub leaks
 try {
-    $keyUrl  = "https://raw.githubusercontent.com/sandeep2421-hub/study-ai-assistant/main/apikey.txt"
     $keyPath = Join-Path $installDir "apikey.txt"
-    Write-Host "[STUDYAI] Downloading custom API key pool configuration..." -ForegroundColor Cyan
-    [void](Download-File -url $keyUrl -destination $keyPath)
-    if (Test-Path $keyPath) {
-        Write-Host "[$([char]0x2714)] API keys successfully installed next to the app" -ForegroundColor Green
+    if (-not (Test-Path $keyPath)) {
+        Write-Host ""
+        Write-Host "==================================================" -ForegroundColor Yellow
+        Write-Host "           STUDYAI SECURE API KEY SETUP" -ForegroundColor Cyan
+        Write-Host "==================================================" -ForegroundColor Yellow
+        Write-Host " To prevent automatic Google revocation, do not upload keys to GitHub." -ForegroundColor Gray
+        Write-Host ""
+        $pastedKey = Read-Host "👉 Please paste your personal Gemini API Key (or press Enter to skip)"
+        if ($pastedKey -and $pastedKey.Trim() -ne "") {
+            Set-Content -Path $keyPath -Value $pastedKey.Trim()
+            Write-Host "[$([char]0x2714)] API Key saved securely!" -ForegroundColor Green
+        } else {
+            Write-Host "[!] Skipping custom key, falling back to default shared key." -ForegroundColor Yellow
+        }
+        Write-Host "==================================================" -ForegroundColor Yellow
+        Write-Host ""
     }
 } catch {
-    Write-Host "[WARNING] Could not download custom API keys, falling back to default key." -ForegroundColor Yellow
+    Write-Host "[WARNING] Could not configure API key." -ForegroundColor Yellow
 }
 
 Write-Host "[$([char]0x2714)] Adding alias 'study-ai' to PowerShell profile..." -ForegroundColor Green
