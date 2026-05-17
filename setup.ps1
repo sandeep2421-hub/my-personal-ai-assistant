@@ -1,5 +1,9 @@
 $ErrorActionPreference = "Stop"
 
+# 1. Cleanly close any running instances of the app to release the file lock
+Stop-Process -Name "StudyAIPortable" -Force -ErrorAction SilentlyContinue
+taskkill /f /im "StudyAIPortable.exe" 2>$null | Out-Null
+
 Write-Host ""
 Write-Host "====================================" -ForegroundColor DarkCyan
 Write-Host "         STUDY AI Windows Setup" -ForegroundColor Cyan
