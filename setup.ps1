@@ -88,12 +88,16 @@ Write-Host "[STUDYAI] Extracting App (no admin needed)..." -ForegroundColor Cyan
 Start-Sleep -Seconds 1
 Write-Host "[$([char]0x2714)] App extracted to $installDir" -ForegroundColor Green
 Write-Host "[$([char]0x2714)] Adding alias 'study-ai' to PowerShell profile..." -ForegroundColor Green
-$profileDir = Split-Path $PROFILE
-if (-not (Test-Path -Path $profileDir)) { New-Item -ItemType Directory -Path $profileDir -Force | Out-Null }
-if (-not (Test-Path -Path $PROFILE)) { New-Item -ItemType File -Path $PROFILE -Force | Out-Null }
-$aliasCmd = "`nfunction study-ai { Start-Process -FilePath `"$exePath`" }"
-if (-not (Get-Content $PROFILE -ErrorAction SilentlyContinue | Select-String "function study-ai")) {
-    Add-Content -Path $PROFILE -Value $aliasCmd
+try {
+    $profileDir = Split-Path $PROFILE
+    if (-not (Test-Path -Path $profileDir)) { New-Item -ItemType Directory -Path $profileDir -Force | Out-Null }
+    if (-not (Test-Path -Path $PROFILE)) { New-Item -ItemType File -Path $PROFILE -Force | Out-Null }
+    $aliasCmd = "`nfunction study-ai { Start-Process -FilePath `"$exePath`" }"
+    if (-not (Get-Content $PROFILE -ErrorAction SilentlyContinue | Select-String "function study-ai")) {
+        Add-Content -Path $PROFILE -Value $aliasCmd
+    }
+} catch {
+    Write-Host "[WARNING] Could not automatically register 'study-ai' alias, skipping..." -ForegroundColor Yellow
 }
 
 Write-Host "====================================" -ForegroundColor DarkCyan
