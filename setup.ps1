@@ -3,9 +3,6 @@ $ErrorActionPreference = "Stop"
 # 1. Cleanly close any running instances of the app if they exist (safe, native PowerShell)
 Get-Process -Name "StudyAIPortable" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
-# 2. Clear any stuck BITS transfer jobs just in case
-Get-BitsTransfer -AllUsers -ErrorAction SilentlyContinue | Remove-BitsTransfer -ErrorAction SilentlyContinue
-
 Write-Host ""
 Write-Host "====================================" -ForegroundColor DarkCyan
 Write-Host "         STUDY AI Windows Setup" -ForegroundColor Cyan
