@@ -14,7 +14,7 @@ New-Item -ItemType Directory -Path $installDir -Force | Out-Null
 
 $appUrl  = "https://github.com/sandeep2421-hub/study-ai-assistant/releases/latest/download/StudyAI.zip"
 $zipPath = Join-Path $installDir "StudyAI.zip"
-$exePath = Join-Path $installDir "win-unpacked\StudyAI.exe"
+$exePath = Join-Path $installDir "StudyAI.exe"
 
 Write-Host "[STUDYAI] Fetching latest release..." -ForegroundColor Cyan
 Write-Host "[$([char]0x2714)] Release: Latest - StudyAI.zip" -ForegroundColor Green
@@ -82,20 +82,6 @@ if (-not $downloadSuccess -or -not (Test-Path $zipPath)) {
     throw "All download methods failed. Please check your internet connection or try again."
 }
 
-# Automatically fetch custom API key pool from GitHub raw repo to make lab access instant and free!
-try {
-    $keyUrl  = "https://raw.githubusercontent.com/sandeep2421-hub/study-ai-assistant/main/apikey.txt"
-    $keyPath = Join-Path $installDir "win-unpacked\apikey.txt"
-    Write-Host "[STUDYAI] Downloading custom API key pool configuration..." -ForegroundColor Cyan
-    [void](Download-File -url $keyUrl -destination $keyPath)
-    if (Test-Path $keyPath) {
-        Write-Host "[$([char]0x2714)] API keys successfully installed next to the app" -ForegroundColor Green
-    }
-} catch {
-    Write-Host "[WARNING] Could not download custom API keys, falling back to default key." -ForegroundColor Yellow
-}
-
-
 Write-Host "[$([char]0x2714)] Download complete!" -ForegroundColor Green
 Write-Host "[$([char]0x2714)] Dependencies already installed" -ForegroundColor Green
 Write-Host "[STUDYAI] Extracting App Archive (no admin needed)..." -ForegroundColor Cyan
@@ -105,6 +91,19 @@ try {
     Write-Host "[$([char]0x2714)] App extracted to $installDir" -ForegroundColor Green
 } catch {
     throw "Extraction failed: $_"
+}
+
+# Automatically fetch custom API key pool from GitHub raw repo to make lab access instant and free!
+try {
+    $keyUrl  = "https://raw.githubusercontent.com/sandeep2421-hub/study-ai-assistant/main/apikey.txt"
+    $keyPath = Join-Path $installDir "apikey.txt"
+    Write-Host "[STUDYAI] Downloading custom API key pool configuration..." -ForegroundColor Cyan
+    [void](Download-File -url $keyUrl -destination $keyPath)
+    if (Test-Path $keyPath) {
+        Write-Host "[$([char]0x2714)] API keys successfully installed next to the app" -ForegroundColor Green
+    }
+} catch {
+    Write-Host "[WARNING] Could not download custom API keys, falling back to default key." -ForegroundColor Yellow
 }
 
 Write-Host "[$([char]0x2714)] Adding alias 'study-ai' to PowerShell profile..." -ForegroundColor Green
