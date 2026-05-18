@@ -56,22 +56,22 @@ if ! command -v xclip >/dev/null 2>&1; then
     fi
 fi
 
-# Securely load API key without public GitHub leaks
-KEY_PATH="$INSTALL_DIR/config/apikey.txt"
+# Securely prompt for user's Member License Key (not the raw Google API Keys!)
+LIC_PATH="$INSTALL_DIR/config/license.txt"
 mkdir -p "$INSTALL_DIR/config"
-if [ ! -f "$KEY_PATH" ]; then
+if [ ! -f "$LIC_PATH" ]; then
     echo ""
     echo -e "\e[33m==================================================\e[0m"
-    echo -e "\e[36m           STUDYAI SECURE API KEY SETUP\e[0m"
+    echo -e "\e[36m            STUDYAI STUDENT LICENSE LOGIN\e[0m"
     echo -e "\e[33m==================================================\e[0m"
-    echo " To prevent automatic Google revocation, do not upload keys to GitHub."
+    echo " Enter your personal License Key (e.g., LIC-XXXX-XXXX) to connect."
     echo ""
-    read -p "👉 Please paste your personal Gemini API Key (or press Enter to skip): " pastedKey
-    if [ ! -z "$pastedKey" ]; then
-        echo "$pastedKey" > "$KEY_PATH"
-        echo -e "\e[32m[✔] API Key saved securely!\e[0m"
+    read -p "👉 Please enter your StudyAI License Key: " pastedLic
+    if [ ! -z "$pastedLic" ]; then
+        echo "$pastedLic" > "$LIC_PATH"
+        echo -e "\e[32m[✔] License Key registered! Connecting...\e[0m"
     else
-        echo -e "\e[33m[!] Skipping custom key, falling back to default shared key.\e[0m"
+        echo -e "\e[33m[!] No license key entered. Please enter a valid license on startup.\e[0m"
     fi
     echo -e "\e[33m==================================================\e[0m"
     echo ""
@@ -90,10 +90,14 @@ rm -rf squashfs-root
 cat << 'EOF' > "$INSTALL_DIR/study-ai-launcher.sh"
 #!/bin/bash
 export PATH="$HOME/.StudyAI/usr/bin:$PATH"
-# Copy apikey to running directory if present
+# Copy apikey or license to running directory if present
 if [ -f "$HOME/.StudyAI/config/apikey.txt" ]; then
     cp "$HOME/.StudyAI/config/apikey.txt" "$HOME/.StudyAI/squashfs-root/apikey.txt" 2>/dev/null || true
     cp "$HOME/.StudyAI/config/apikey.txt" "$HOME/.StudyAI/squashfs-root/resources/app/apikey.txt" 2>/dev/null || true
+fi
+if [ -f "$HOME/.StudyAI/config/license.txt" ]; then
+    cp "$HOME/.StudyAI/config/license.txt" "$HOME/.StudyAI/squashfs-root/license.txt" 2>/dev/null || true
+    cp "$HOME/.StudyAI/config/license.txt" "$HOME/.StudyAI/squashfs-root/resources/app/license.txt" 2>/dev/null || true
 fi
 exec "$HOME/.StudyAI/squashfs-root/AppRun" --no-sandbox "$@"
 EOF

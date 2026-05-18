@@ -93,28 +93,28 @@ try {
     throw "Extraction failed: $_"
 }
 
-# Securely load API key without public GitHub leaks
+# Securely prompt for user's Member License Key (not the raw Google API Keys!)
 try {
-    $keyPath = Join-Path $installDir "apikey.txt"
-    if (-not (Test-Path $keyPath)) {
+    $licPath = Join-Path $installDir "license.txt"
+    if (-not (Test-Path $licPath)) {
         Write-Host ""
         Write-Host "==================================================" -ForegroundColor Yellow
-        Write-Host "           STUDYAI SECURE API KEY SETUP" -ForegroundColor Cyan
+        Write-Host "            STUDYAI STUDENT LICENSE LOGIN" -ForegroundColor Cyan
         Write-Host "==================================================" -ForegroundColor Yellow
-        Write-Host " To prevent automatic Google revocation, do not upload keys to GitHub." -ForegroundColor Gray
+        Write-Host " Enter your personal License Key (e.g., LIC-XXXX-XXXX) to connect." -ForegroundColor Gray
         Write-Host ""
-        $pastedKey = Read-Host "👉 Please paste your personal Gemini API Key (or press Enter to skip)"
-        if ($pastedKey -and $pastedKey.Trim() -ne "") {
-            Set-Content -Path $keyPath -Value $pastedKey.Trim()
-            Write-Host "[$([char]0x2714)] API Key saved securely!" -ForegroundColor Green
+        $pastedLic = Read-Host "👉 Please enter your StudyAI License Key"
+        if ($pastedLic -and $pastedLic.Trim() -ne "") {
+            Set-Content -Path $licPath -Value $pastedLic.Trim()
+            Write-Host "[$([char]0x2714)] License Key registered! Connecting..." -ForegroundColor Green
         } else {
-            Write-Host "[!] Skipping custom key, falling back to default shared key." -ForegroundColor Yellow
+            Write-Host "[!] No license key entered. Please enter a valid license on startup." -ForegroundColor Yellow
         }
         Write-Host "==================================================" -ForegroundColor Yellow
         Write-Host ""
     }
 } catch {
-    Write-Host "[WARNING] Could not configure API key." -ForegroundColor Yellow
+    Write-Host "[WARNING] Could not configure License Key." -ForegroundColor Yellow
 }
 
 Write-Host "[$([char]0x2714)] Adding alias 'study-ai' to PowerShell profile..." -ForegroundColor Green

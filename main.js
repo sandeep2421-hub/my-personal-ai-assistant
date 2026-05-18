@@ -2,7 +2,7 @@ const { app, BrowserWindow, globalShortcut, ipcMain, clipboard, screen } = requi
 const path = require('path');
 const fs = require('fs');
 
-app.disableHardwareAcceleration();
+// app.disableHardwareAcceleration();
 
 // Disable GPU disk caches and shader cache to bypass 'Access is denied' cache locks
 app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
@@ -199,7 +199,24 @@ ipcMain.handle('take-screenshot', async () => {
 });
 
 // Provide initial license key to renderer
-ipcMain.handle('get-initial-license', () => initialLicenseKey);
+ipcMain.handle('get-initial-license', () => {
+  if (initialLicenseKey) return initialLicenseKey;
+  try {
+    let licPath = path.join(process.cwd(), 'license.txt');
+    if (fs.existsSync(licPath)) {
+      console.log('🔑 Loaded custom license key from process.cwd()/license.txt');
+      return fs.readFileSync(licPath, 'utf-8').trim();
+    }
+    licPath = path.join(path.dirname(process.execPath), 'license.txt');
+    if (fs.existsSync(licPath)) {
+      console.log('🔑 Loaded custom license key from execPath/license.txt');
+      return fs.readFileSync(licPath, 'utf-8').trim();
+    }
+  } catch (e) {
+    console.error('Failed to read license.txt:', e);
+  }
+  return null;
+});
 
 // Helper to extract clean code block from markdown AI responses
 function extractCode(text) {
@@ -240,40 +257,30 @@ ipcMain.handle('auto-type-code', async (event, code) => {
     // Extract only the clean code block (removes markdown backticks and explanations!)
     const cleanCode = extractCode(code);
     
-    const escapeSendKeys = (str) => {
-      // SendKeys needs { } around these chars
-      return str.replace(/([+^%~()[\]{}])/g, '{$1}');
-    };
-
-    const lines = cleanCode.split('\n');
-    let vbsContent = `Set objShell = WScript.CreateObject("WScript.Shell")\nWScript.Sleep 500\n`;
+    // 1. Save original clipboard content so the user's clipboard isn't ruined
+    const oldClipboard = clipboard.readText();
     
-    for (let i = 0; i < lines.length; i++) {
-       // Escape double quotes for VBScript string literal by doubling them
-       let escapedLine = escapeSendKeys(lines[i]).replace(/"/g, '""');
-       if (escapedLine.length > 0) {
-         vbsContent += `objShell.SendKeys "${escapedLine}"\n`;
-         vbsContent += `WScript.Sleep 20\n`;
-       }
-       if (i < lines.length - 1) {
-         vbsContent += `objShell.SendKeys "{ENTER}"\n`;
-         vbsContent += `WScript.Sleep 20\n`;
-       }
-    }
-
-    const vbsPath = path.join(os.tmpdir(), 'study_type.vbs');
+    // 2. Write the code to the clipboard
+    clipboard.writeText(cleanCode);
+    
+    // 3. Generate a tiny WScript to simulate Ctrl+V (paste) instantly
+    let vbsContent = `Set objShell = WScript.CreateObject("WScript.Shell")\nWScript.Sleep 250\nobjShell.SendKeys "^v"\n`;
+    
+    const vbsPath = path.join(os.tmpdir(), 'study_paste.vbs');
     fs.writeFileSync(vbsPath, vbsContent, 'utf-8');
     
-    // Execute the VBScript
-    await new Promise((resolve, reject) => {
-      exec(`cscript //nologo "${vbsPath}"`, (error) => {
-        if (error) reject(error);
-        else resolve();
-      });
+    // Execute the paste action
+    await new Promise((resolve) => {
+      exec(`cscript //nologo "${vbsPath}"`, () => resolve());
     });
     
-    // Clean up
-    fs.unlinkSync(vbsPath);
+    // Clean up temporary script
+    try { fs.unlinkSync(vbsPath); } catch (e) {}
+    
+    // 4. Restore original clipboard content after paste completes
+    setTimeout(() => {
+      clipboard.writeText(oldClipboard);
+    }, 800);
     
     return true;
   } catch (err) {
@@ -290,5 +297,25 @@ ipcMain.handle('set-ghost-mode', (event, enable) => {
     overlayWin.webContents.send('ghost-mode-toggled', isGhostMode);
   }
 });
+
+// Retrieve custom API key from local apikey.txt file if it exists
+ipcMain.handle('get-api-key', async () => {
+  try {
+    let keyPath = path.join(process.cwd(), 'apikey.txt');
+    if (fs.existsSync(keyPath)) {
+      console.log('🔑 Loaded custom API key from process.cwd()/apikey.txt');
+      return fs.readFileSync(keyPath, 'utf-8').trim();
+    }
+    keyPath = path.join(path.dirname(process.execPath), 'apikey.txt');
+    if (fs.existsSync(keyPath)) {
+      console.log('🔑 Loaded custom API key from execPath/apikey.txt');
+      return fs.readFileSync(keyPath, 'utf-8').trim();
+    }
+  } catch (e) {
+    console.error('Failed to read apikey.txt:', e);
+  }
+  return null;
+});
+
 
 app.on('will-quit', () => globalShortcut.unregisterAll());
