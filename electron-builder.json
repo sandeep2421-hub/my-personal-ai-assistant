@@ -1,0 +1,30 @@
+{
+  "appId": "com.study.aiassistant",
+  "productName": "StudyAI",
+  "directories": { "output": "release" },
+  "files": [
+    "dist/**/*",
+    "main.js",
+    "preload.js",
+    "node_modules/**/*"
+  ],
+  "publish": {
+    "provider": "github",
+    "owner": "sandeep2421-hub",
+    "repo": "study-ai-assistant"
+  },
+  "win": {
+    "target": ["zip", "portable"]
+  },
+  "asar": true,
+  "asarUnpack": [
+    "**/node_modules/screenshot-desktop/**/*",
+    "**/node_modules/clipboardy/**/*"
+  ],
+  "portable": {
+    "artifactName": "StudyAIPortable.exe"
+  },
+  "linux": { "target": "AppImage" },
+  "mac": { "target": "dmg" },
+  "npmRebuild": false
+}

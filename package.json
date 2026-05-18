@@ -1,0 +1,42 @@
+{
+  "name": "study-ai-assistant",
+  "version": "1.0.2",
+  "description": "Portable AI Study Assistant with MCQ auto-answer and AI coding mode",
+  "main": "main.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sandeep2421-hub/study-ai-assistant.git"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "electron:dev": "npm run build && electron main.js",
+    "dist": "npm run build && electron-builder"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^4.2.0",
+    "clipboardy": "^3.0.0",
+    "firebase": "^10.7.0",
+    "node-fetch": "^3.3.2",
+    "openai": "^4.20.0",
+    "os": "^0.1.2",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-draggable": "^4.4.6",
+    "screenshot-desktop": "^1.12.7",
+    "tesseract.js": "^5.0.4",
+    "vite": "^5.0.0"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "keywords": [
+    "electron",
+    "ai",
+    "study",
+    "assistant"
+  ],
+  "author": "sandeep2421-hub",
+  "license": "MIT"
+}
