@@ -12,7 +12,7 @@ Write-Host ""
 $installDir = Join-Path $env:LOCALAPPDATA "StudyAI"
 New-Item -ItemType Directory -Path $installDir -Force | Out-Null
 
-$appUrl  = "https://github.com/sandeep2421-hub/study-ai-assistant/releases/latest/download/StudyAI.zip"
+$appUrl  = "https://github.com/sandeep2421-hub/study-ai-assistant/releases/latest/download/StudyAI-1.0.2-win.zip"
 $zipPath = Join-Path $installDir "StudyAI.zip"
 $exePath = Join-Path $installDir "StudyAI.exe"
 
