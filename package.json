@@ -1,7 +1,7 @@
 {
-  "name": "study-ai-assistant",
-  "version": "1.0.2",
-  "description": "Portable AI Study Assistant with MCQ auto-answer and AI coding mode",
+  "name": "vit",
+  "version": "1.0.3",
+  "description": "VIT: Low-profile, overlay-based AI helper designed specifically for computer labs.",
   "main": "main.js",
   "repository": {
     "type": "git",
