@@ -5,7 +5,7 @@ export default function OverlayWindow({
   children, 
   screenshotCount = 0, 
   status = '', 
-  pillText = 'Study AI', 
+  pillText = 'VIT', 
   pillDotColor = '#448aff', 
   pillGlowing = false,
   visible = true

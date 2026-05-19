@@ -36,7 +36,15 @@ export async function validateLicenseAndGetApiKey(key) {
     // Must have an API key set by admin
     if (!data.apiKey) {
       await logLoginEvent(key, false, 'Missing API Key');
-      return { valid: false, apiKey: null };
+      return { valid: false, apiKey: null, apiKeys: [] };
+    }
+
+    // Parse one or more keys from the apiKey field (newline/comma separated)
+    const apiKeysArray = data.apiKey.split(/[\r\n,]+/).map(k => k.trim()).filter(k => k.length > 0);
+
+    if (apiKeysArray.length === 0) {
+      await logLoginEvent(key, false, 'Empty API Key Pool');
+      return { valid: false, apiKey: null, apiKeys: [] };
     }
 
     // Update last seen (make it safe/optional so strict security rules don't block login)
@@ -56,10 +64,10 @@ export async function validateLicenseAndGetApiKey(key) {
       console.warn('Optional: Failed to write login log in Firestore:', logError);
     }
 
-    return { valid: true, apiKey: data.apiKey };
+    return { valid: true, apiKey: apiKeysArray[0], apiKeys: apiKeysArray };
   } catch (error) {
     console.error('License validation error:', error);
-    return { valid: false, apiKey: null };
+    return { valid: false, apiKey: null, apiKeys: [] };
   }
 }
 
@@ -106,6 +114,7 @@ export async function checkLicense() {
   const result = await validateLicenseAndGetApiKey(savedKey);
   if (result.valid) {
     localStorage.setItem('openai_api_key', result.apiKey);
+    localStorage.setItem('openai_api_keys', JSON.stringify(result.apiKeys));
   }
   return result.valid;
 }

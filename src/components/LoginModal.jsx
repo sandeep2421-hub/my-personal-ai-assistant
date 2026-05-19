@@ -17,7 +17,9 @@ export default function LoginModal({ onSuccess }) {
       const result = await validateLicenseAndGetApiKey(key.trim());
       if (result.valid) {
         saveLicense(key.trim());
+        localStorage.removeItem('openai_api_keys'); // Clear any stale cache
         localStorage.setItem('openai_api_key', result.apiKey);
+        localStorage.setItem('openai_api_keys', JSON.stringify(result.apiKeys));
         onSuccess();
       } else {
         setError('Invalid or expired license key.');
@@ -34,16 +36,16 @@ export default function LoginModal({ onSuccess }) {
   };
 
   return (
-    <div className="glass-overlay" style={{ width: 330, padding: '24px 20px', borderRadius: 16 }}>
-      <div className="drag-handle" style={{ display: 'flex', justifyContent: 'center', marginBottom: 16, background: 'none', borderBottom: 'none', height: 'auto', padding: 0 }}>
-        <span style={{ fontSize: 15, fontWeight: 700, color: '#eceff1', letterSpacing: '0.3px' }}>
-          📚 Study AI Assistant
+    <div className="glass-overlay" style={{ width: 330, padding: '28px 24px', borderRadius: 16 }}>
+      <div className="drag-handle" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 18, background: 'none', borderBottom: 'none', height: 'auto', padding: 0 }}>
+        <span style={{ fontSize: 20, fontWeight: 800, color: '#ffffff', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '6px', textShadow: '0 0 10px rgba(255, 202, 40, 0.4)' }}>
+          <span style={{ color: '#ffca28' }}>⚡</span> VIT
         </span>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <p style={{ fontSize: 11, color: '#90a4ae', textAlign: 'center', margin: '0 0 4px 0', lineHeight: 1.4 }}>
-          Enter your license key to connect to the study helper engine.
+        <p style={{ fontSize: 12, color: '#90a4ae', textAlign: 'center', margin: '0 0 4px 0', lineHeight: 1.4, fontWeight: 500 }}>
+          Enter your license key to activate
         </p>
 
         <div style={{ position: 'relative' }}>
@@ -52,19 +54,20 @@ export default function LoginModal({ onSuccess }) {
             value={key}
             onChange={e => setKey(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="License Key (e.g. sandy)"
+            placeholder="License key"
             autoFocus
             style={{
               width: '100%',
-              padding: '11px 14px',
+              padding: '12px 14px',
               borderRadius: 10,
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              background: 'rgba(255, 255, 255, 0.04)',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              background: 'rgba(255, 255, 255, 0.05)',
               color: '#ffffff',
               fontSize: 13,
               outline: 'none',
               textAlign: 'center',
-              transition: 'all 0.2s'
+              transition: 'all 0.2s',
+              boxShadow: 'inset 0 1px 3px rgba(0, 0, 0, 0.2)'
             }}
           />
         </div>
@@ -75,27 +78,28 @@ export default function LoginModal({ onSuccess }) {
           style={{
             borderRadius: 10,
             border: 'none',
-            padding: '11px',
-            background: 'linear-gradient(135deg, #1e88e5, #1565c0)',
+            padding: '12px',
+            background: 'linear-gradient(135deg, #7b1fa2, #4a148c)',
             color: 'white',
             cursor: 'pointer',
             fontSize: 13,
-            fontWeight: 600,
+            fontWeight: 700,
             transition: 'all 0.2s',
-            width: '100%'
+            width: '100%',
+            boxShadow: '0 4px 12px rgba(123, 31, 162, 0.3)'
           }}
         >
-          {loading ? '⏳ Connecting...' : 'Connect'}
+          {loading ? '⏳ Activating...' : 'Activate'}
         </button>
 
         {error && (
-          <p style={{ color: '#ef9a9a', fontSize: 12, textAlign: 'center', margin: 0, fontWeight: 500 }}>
+          <p style={{ color: '#ff8a80', fontSize: 12, textAlign: 'center', margin: 0, fontWeight: 500 }}>
             {error}
           </p>
         )}
 
-        <div style={{ fontSize: 9, color: '#546e7a', textAlign: 'center', marginTop: 4 }}>
-          Protected connection channel
+        <div style={{ fontSize: 10, color: '#546e7a', textAlign: 'center', marginTop: 4, fontStyle: 'italic', lineHeight: 1.3 }}>
+          Binds to one PC. Keep a backup key.
         </div>
       </div>
     </div>
