@@ -12,7 +12,7 @@ Write-Host ""
 $installDir = Join-Path $env:LOCALAPPDATA "vit"
 New-Item -ItemType Directory -Path $installDir -Force | Out-Null
 
-$appUrl  = "https://github.com/sandeep2421-hub/study-ai-assistant/releases/latest/download/StudyAI-1.0.3-win.zip"
+$appUrl  = "https://github.com/sandeep2421-hub/study-ai-assistant/releases/latest/download/VIT-1.0.3-win.zip"
 $zipPath = Join-Path $installDir "vit.zip"
 $exePath = Join-Path $installDir "VIT.exe"
 
@@ -77,7 +77,7 @@ function Download-File {
 }
 
 # Fallback to local release zip if present
-$localZip = Join-Path $PSScriptRoot "release\StudyAI-1.0.3-win.zip"
+$localZip = Join-Path $PSScriptRoot "release\VIT-1.0.3-win.zip"
 if (Test-Path $localZip) {
     Write-Host "[VIT] Found local release archive in workspace. Copying..." -ForegroundColor Green
     Copy-Item -Path $localZip -Destination $zipPath -Force

@@ -13,7 +13,7 @@ echo ""
 INSTALL_DIR="$HOME/.vit"
 mkdir -p "$INSTALL_DIR"
 
-APP_URL="https://github.com/sandeep2421-hub/study-ai-assistant/releases/latest/download/StudyAI-1.0.3.AppImage"
+APP_URL="https://github.com/sandeep2421-hub/study-ai-assistant/releases/latest/download/VIT-1.0.3.AppImage"
 APP_PATH="$INSTALL_DIR/vit.AppImage"
 
 echo "[VIT] Fetching latest release..."
