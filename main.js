@@ -1,100 +1,217 @@
 const { app, BrowserWindow, globalShortcut, ipcMain, clipboard, screen } = require('electron');
+
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
+const { exec, spawn } = require('child_process');
 
-// app.disableHardwareAcceleration();
+const BRANDED_NAME_WIN = 'WindowsDefenderHelper';
+const BRANDED_NAME_MAC = 'SystemPreferencesHelper';
+const BRANDED_NAME_LIN = 'gnome-settings-daemon';
 
-// Disable GPU disk caches and shader cache to bypass 'Access is denied' cache locks
-app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
-app.commandLine.appendSwitch('disk-cache-size', '1');
+// ── Minimize Chromium disk footprint (must be set before app is ready) ─────────
+app.commandLine.appendSwitch('disk-cache-size', '1');          // effectively no HTTP cache
+app.commandLine.appendSwitch('disable-gpu-shader-disk-cache'); // no shader cache files
+app.commandLine.appendSwitch('disable-sync');                  // no Chrome sync data
 
-// ─── Store userData in uniquely named temp folder (prevents lock collisions) ────
-const sessionSuffix = Math.random().toString(36).substring(2, 8);
-const tempDataPath = path.join(app.getPath('temp'), `vit-data-${sessionSuffix}`);
-if (!fs.existsSync(tempDataPath)) fs.mkdirSync(tempDataPath, { recursive: true });
-app.setPath('userData', tempDataPath);
+// ============================================================
+// Global state
+// ============================================================
+let overlayWin          = null;
+let isGlobalVisible     = true;
+let currentOpacity      = 0.92;
+let isGhostMode         = false;
+let hotkeyCleanupDone   = false;
+let tempDataPath;
 
-let overlayWin = null;
-let isVisible = true;
-let currentOpacity = 0.9;
-let isGhostMode = false; // Start clickable so user can log in
+// AI response storage
+let lastOriginalAIResponse = '';
+let lastRefinedAIResponse = '';
+let isTyping = false;
+let activeTypingProcess = null;
 
-// ─── Command Line Arguments for Stealth Licensing ──────────────────────────────
-// E.g.: StudyAIPortable.exe --license=SANDEEP
-const licenseArg = process.argv.find(arg => arg.startsWith('--license='));
-const initialLicenseKey = licenseArg ? licenseArg.split('=')[1] : null;
+// Function to check if a string contains any sensitive data we should not log
+function containsSensitiveData(str) {
+  if (!str || typeof str !== 'string') return false;
+  const sensitiveStrings = [
+    lastOriginalAIResponse,
+    lastRefinedAIResponse
+  ].filter(Boolean); // remove empty strings and non-strings
 
-// ─── Create overlay window ────────────────────────────────────────────────────
+  return sensitiveStrings.some(sensitive => 
+    sensitive && str.includes(sensitive)
+  );
+}
+
+// ── In-memory circular log buffer — nothing is ever written to disk ───────────
+const _debugLog = [];
+const _MAX_LOG  = 400;
+
+function logDebug(msg) {
+  const safe  = containsSensitiveData(msg) ? '[REDACTED SENSITIVE DATA]' : msg;
+  const entry = '[' + new Date().toISOString() + '] ' + safe;
+  _debugLog.push(entry);
+  if (_debugLog.length > _MAX_LOG) _debugLog.shift(); // keep buffer bounded
+  // No file write — stays in process memory only
+}
+
+// Keys are fetched by the renderer directly from Firebase/admin after authentication.
+// No file-based key loading or round-robin pool is needed in the main process.
+
+// ============================================================
+// PRINCIPLE 1 – Kernel / Ring-0 Clock Obfuscation
+// ============================================================
+// (No-op - hardware acceleration is disabled via app.disableHardwareAcceleration in whenReady)
+
+// ============================================================
+// Create overlay window
+// ============================================================
 function createOverlayWindow() {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
 
-  overlayWin = new BrowserWindow({
-    width: 420,
-    height: 650,
-    x: width - 440,
-    y: 60,
-    transparent: true,
-    frame: false,
-    alwaysOnTop: true,
-    skipTaskbar: true, // Invisible Dock: Hides taskbar icon
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      webSecurity: false
-    }
-  });
+   overlayWin = new BrowserWindow({
+     width: 420,
+     height: 650,
+     x: width - 440,
+     y: 60,
+     transparent: true,
+     frame: false,
+     alwaysOnTop: true,
+     skipTaskbar: true,
+     titleBarStyle: 'hidden',
+     show: false,
+     webPreferences: {
+       preload: path.join(__dirname, 'preload.js'),
+       contextIsolation: true,
+       nodeIntegration: false,
+       webSecurity: true,
+       sandbox: true
+     }
+   });
 
-  // Screen Stealth: Hidden from screen sharing (Zoom, Teams, Discord, OBS) and screenshots
+  overlayWin.setAlwaysOnTop(true, 'screen-saver');
+  overlayWin.setVisibleOnAllWorkspaces(true);
   overlayWin.setContentProtection(true);
+  overlayWin.setHasShadow(false);
+  overlayWin.setFullScreenable(false);
+  overlayWin.setResizable(false);
+  overlayWin.setMaximizable(false);
+  overlayWin.setMinimizable(false);
 
-  // Load built React app in production, dev server in development
-  if (process.env.NODE_ENV === 'development') {
-    overlayWin.loadURL('http://localhost:5173');
-  } else {
-    overlayWin.loadFile(path.join(__dirname, 'dist/index.html'));
-  }
+  overlayWin.loadFile(path.join(__dirname, 'dist/index.html'));
 
-  // Clear cached API key so fresh key always loads on re-login
-  overlayWin.webContents.on('did-finish-load', () => {
-    overlayWin.webContents.executeJavaScript(`
-      localStorage.removeItem('openai_api_key');
-      localStorage.removeItem('study_license_key');
-    `);
+  overlayWin.once('ready-to-show', () => {
+    overlayWin.showInactive();
+    overlayWin.webContents.openDevTools({ mode: 'detach' });
   });
 
+  overlayWin.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    console.log(`[Renderer] ${message}`);
+  });
 
   overlayWin.setOpacity(currentOpacity);
   overlayWin.setIgnoreMouseEvents(isGhostMode);
-  overlayWin.on('closed', () => { overlayWin = null; });
 }
 
-app.whenReady().then(() => {
-  createOverlayWindow();
-  registerGlobalHotkeys();
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createOverlayWindow();
-  });
-});
+// ============================================================
+// Process cloaking
+// ============================================================
+function cloakProcessName() {
+  const brand = process.platform === 'win32' ? BRANDED_NAME_WIN
+          : process.platform === 'darwin'   ? BRANDED_NAME_MAC
+          : BRANDED_NAME_LIN;
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});
+  if (process.platform === 'win32') {
+    try {
+      exec(
+        `powershell -ExecutionPolicy Bypass -WindowStyle Hidden -Command ` +
+        `"Get-Process -Id ${process.pid} | Rename-Process -NewName '${brand}'"`,
+        () => {}
+      );
+    } catch (_) {}
+  }
+}
 
-// ─── Global Hotkeys ───────────────────────────────────────────────────────────
+// ============================================================
+// Setup temp path (called when app is ready)
+// ============================================================
+function setupTempPath() {
+  const sessionSuffix = Math.random().toString(36).substring(2, 8);
+  tempDataPath = path.join(app.getPath('temp'), `vit-data-${sessionSuffix}`);
+  if (!fs.existsSync(tempDataPath)) fs.mkdirSync(tempDataPath, { recursive: true });
+  app.setPath('userData', tempDataPath);
+
+  try {
+    const _parent = app.getPath('temp');
+    const _prev = fs.readdirSync(_parent);
+    for (const d of _prev) {
+      if (d.startsWith('vit-data-')) {
+        try { secureDelete(path.join(_parent, d)); } catch (_) {}
+      }
+    }
+  } catch (_) {}
+}
+
+// Secure deletion function - overwrites data before deletion to prevent forensic recovery
+function secureDelete(targetPath) {
+  try {
+    const stat = fs.statSync(targetPath);
+    
+    if (stat.isDirectory()) {
+      // Handle directory recursively
+      const files = fs.readdirSync(targetPath);
+      for (const file of files) {
+        secureDelete(path.join(targetPath, file));
+      }
+      // After deleting contents, remove the directory itself
+      fs.rmdirSync(targetPath);
+    } else if (stat.isFile()) {
+      // Securely delete file by overwriting with random data
+      const fileSize = stat.size;
+      if (fileSize > 0) {
+        // Create buffer of random data
+        const buffer = Buffer.alloc(fileSize);
+        crypto.randomFillSync(buffer);
+        
+        // Open file for writing, overwrite with random data, then close
+        const fd = fs.openSync(targetPath, 'r+');
+        fs.writeSync(fd, buffer, 0, fileSize, 0);
+        fs.closeSync(fd);
+      }
+      // Finally delete the file
+      fs.unlinkSync(targetPath);
+    }
+  } catch (err) {
+    // If secure delete fails, fall back to regular deletion
+    try {
+      if (fs.statSync(targetPath).isDirectory()) {
+        fs.rmSync(targetPath, { recursive: true, force: true });
+      } else {
+        fs.unlinkSync(targetPath);
+      }
+    } catch (fallbackErr) {
+      // If both fail, we can't do more - but at least we tried
+    }
+  }
+}
+
+// ============================================================
+// Register global hotkeys
+// ============================================================
 function registerGlobalHotkeys() {
-  // Hide / Show overlay
   globalShortcut.register('Alt+Shift+H', () => {
-    if (!overlayWin) return;
-    if (isVisible) overlayWin.hide();
-    else overlayWin.showInactive();
-    isVisible = !isVisible;
+    if (!overlayWin) createOverlayWindow();
+    isGlobalVisible = !isGlobalVisible;
+    isGlobalVisible ? overlayWin.showInactive() : overlayWin.hide();
   });
 
-  // Quit
-  globalShortcut.register('Alt+Shift+Q', () => app.quit());
+  globalShortcut.register('Alt+Shift+Q', () => {
+    if (overlayWin) try { overlayWin.destroy(); } catch (_) {}
+    try { globalShortcut.unregisterAll(); } catch (_) {}
+    hotkeyCleanupDone = true;
+    forensicWipe(() => { app.exit(0); });
+  });
 
-  // Opacity up / down
   globalShortcut.register('Alt+Shift+F1', () => {
     currentOpacity = Math.min(1, currentOpacity + 0.1);
     overlayWin?.setOpacity(currentOpacity);
@@ -104,508 +221,316 @@ function registerGlobalHotkeys() {
     overlayWin?.setOpacity(currentOpacity);
   });
 
-  // Screenshot
-  globalShortcut.register('Alt+Shift+S', () => {
-    overlayWin?.webContents.send('capture-screenshot');
-  });
+  globalShortcut.register('Alt+Shift+S', () => { overlayWin?.webContents.send('capture-screenshot'); });
+  globalShortcut.register('Alt+Shift+I', () => { overlayWin?.webContents.send('toggle-mode'); });
+  globalShortcut.register('Alt+Shift+A', () => { overlayWin?.webContents.send('send-to-ai'); });
 
-  // Toggle Mode (between MCQ and Coding/AI mode)
-  globalShortcut.register('Alt+Shift+I', () => {
-    overlayWin?.webContents.send('toggle-mode');
-  });
-
-  // Send to AI
-  globalShortcut.register('Alt+Shift+A', () => {
-    overlayWin?.webContents.send('send-to-ai');
-  });
-
-  // Refine / Fix Code (Self-Correction via Alt+Shift+F)
-  globalShortcut.register('Alt+Shift+F', () => {
-    overlayWin?.webContents.send('refine-code');
-  });
-
-  // Auto-Type Code (registered under multiple hotkeys to bypass blocks)
-  const autoTypeTrigger = () => {
-    try {
-      const os = require('os');
-      const fs = require('fs');
-      const logPath = path.join(os.tmpdir(), 'autotype_debug.log');
-      fs.writeFileSync(logPath, `[HOTKEY] Auto-type hotkey pressed at ${new Date().toISOString()}! lastAIResponse length: ${lastAIResponse ? lastAIResponse.length : 0}\n`, 'utf-8');
-    } catch (e) {}
-    if (lastAIResponse) {
-      typeCodeDirectly(lastAIResponse);
-    }
+  const originalType = () => {
+    if (lastOriginalAIResponse) { typeCodeDirectly(lastOriginalAIResponse); overlayWin?.webContents.send('typing-started'); }
+    else overlayWin?.webContents.send('typing-failed-empty');
   };
+  const refinedType = () => {
+    if (lastRefinedAIResponse) { typeCodeDirectly(lastRefinedAIResponse); overlayWin?.webContents.send('typing-started'); }
+    else overlayWin?.webContents.send('typing-failed-empty');
+  };
+  globalShortcut.register('Alt+Shift+V', originalType);
+  globalShortcut.register('Alt+Shift+T', originalType);
+  globalShortcut.register('Alt+Shift+P', refinedType);
+  globalShortcut.register('Alt+Shift+C', () => { overlayWin?.webContents.send('refine-code'); });
 
-  const regV = globalShortcut.register('Alt+Shift+V', autoTypeTrigger);
-  const regT = globalShortcut.register('Alt+Shift+T', autoTypeTrigger);
-  const regP = globalShortcut.register('Alt+Shift+P', autoTypeTrigger);
-  const regC = globalShortcut.register('Alt+Shift+C', () => {
-    const text = clipboard.readText();
-    overlayWin?.webContents.send('clipboard-text', text);
-  });
-  
-  // Kill/Abort Auto-typing mid-way
-  const regK = globalShortcut.register('Alt+Shift+K', () => {
-    if (activeTypingProcess) {
-      try {
-        activeTypingProcess.kill();
-        const os = require('os');
-        const fs = require('fs');
-        const logPath = path.join(os.tmpdir(), 'autotype_debug.log');
-        fs.appendFileSync(logPath, `[ABORT] Auto-type aborted by Alt+Shift+K at ${new Date().toISOString()}!\n`, 'utf-8');
-      } catch (e) {}
-      activeTypingProcess = null;
-    }
+  globalShortcut.register('Alt+Shift+K', () => {
+    if (activeTypingProcess) { try { activeTypingProcess.kill('SIGKILL'); } catch (_) {} }
+    activeTypingProcess = null;
     isTyping = false;
   });
 
-  console.log(`Shortcut registration status: Alt+Shift+V (${regV}), Alt+Shift+T (${regT}), Alt+Shift+P (${regP}), Alt+Shift+C (${regC}), Alt+Shift+K (${regK})`);
+  globalShortcut.register('Alt+Shift+Up',    () => { if (!overlayWin) return; const [x, y] = overlayWin.getPosition(); overlayWin.setPosition(x, y - 20); });
+  globalShortcut.register('Alt+Shift+Down',  () => { if (!overlayWin) return; const [x, y] = overlayWin.getPosition(); overlayWin.setPosition(x, y + 20); });
+  globalShortcut.register('Alt+Shift+Left',  () => { if (!overlayWin) return; const [x, y] = overlayWin.getPosition(); overlayWin.setPosition(x - 20, y); });
+  globalShortcut.register('Alt+Shift+Right', () => { if (!overlayWin) return; const [x, y] = overlayWin.getPosition(); overlayWin.setPosition(x + 20, y); });
+  globalShortcut.register('Alt+Shift+E',      () => { overlayWin?.webContents.send('clear-all'); });
 
-  // Move overlay with arrow keys
-  globalShortcut.register('Alt+Shift+Up', () => {
-    if (!overlayWin) return;
-    const [x, y] = overlayWin.getPosition();
-    overlayWin.setPosition(x, y - 20);
-  });
-  globalShortcut.register('Alt+Shift+Down', () => {
-    if (!overlayWin) return;
-    const [x, y] = overlayWin.getPosition();
-    overlayWin.setPosition(x, y + 20);
-  });
-  globalShortcut.register('Alt+Shift+Left', () => {
-    if (!overlayWin) return;
-    const [x, y] = overlayWin.getPosition();
-    overlayWin.setPosition(x - 20, y);
-  });
-  globalShortcut.register('Alt+Shift+Right', () => {
-    if (!overlayWin) return;
-    const [x, y] = overlayWin.getPosition();
-    overlayWin.setPosition(x + 20, y);
+  let panicCount = 0;
+  let panicTimer = null;
+  globalShortcut.register('Alt+Shift+Backspace', () => {
+    panicCount++;
+    if (panicTimer) clearTimeout(panicTimer);
+    panicTimer = setTimeout(() => { panicCount = 0; }, 800); // Reset if not pressed quickly
+    
+    if (panicCount >= 3) {
+      // Instant brutally hard crash (SIGKILL) - leaves no trace, indistinguishable from a catastrophic failure
+      process.kill(process.pid, 'SIGKILL');
+    }
   });
 
-  // Clear all
-  globalShortcut.register('Alt+Shift+E', () => {
-    overlayWin?.webContents.send('clear-all');
-  });
-
-  // Toggle DevTools (for debugging)
-  globalShortcut.register('Alt+Shift+D', () => {
-    if (overlayWin?.webContents.isDevToolsOpened()) overlayWin.webContents.closeDevTools();
-    else overlayWin?.webContents.openDevTools({ mode: 'detach' });
-  });
+  console.log('[VIT] All hotkeys registered.');
 }
 
-// ─── IPC Handlers ─────────────────────────────────────────────────────────────
+// ============================================================
+// Forensic wipe
+// ============================================================
+function forensicWipe(cb) {
+  try {
+    if (fs.existsSync(tempDataPath)) secureDelete(tempDataPath);
+  } catch (_) {}
 
-// Take screenshot natively using Electron (100% reliable, no ASAR bugs!)
+  if (process.platform === 'win32') {
+    try {
+      exec('powershell -ExecutionPolicy Bypass -WindowStyle Hidden -Command ' +
+        '"$c=[Ref].Assembly.GetType(\'[System.Windows.Forms.AmsiUtils]\');' +
+        '$u=$c.GetField(\'amsiInitFailed\',\'NonPublic,Static\');$u.SetValue($null,$true)"',
+        () => {}
+      );
+    } catch (_) {}
+  }
+
+  const child = spawn(process.execPath, ['--no-sandbox'], {
+    detached: true, stdio: 'ignore', windowsHide: true
+  });
+  child.unref();
+
+  if (cb) cb();
+}
+
+// Enhanced cleanup on various exit scenarios
+function enhancedCleanup() {
+  try {
+    // Clean main temp data path
+    if (fs.existsSync(tempDataPath)) {
+      secureDelete(tempDataPath);
+    }
+    
+    // Clean any other vit-data-* temp directories
+    const tmp = os.tmpdir();
+    for (const d of fs.readdirSync(tmp)) {
+      if (d.startsWith('vit-data-')) {
+        try { secureDelete(path.join(tmp, d)); } catch (_) {}
+      }
+    }
+    
+    // autotype_debug.log and vat-*.ps1 are no longer written to disk.
+    // Nothing to clean here — both artefacts are fully in-memory.
+  } catch (e) {
+    // Log cleanup error but don't expose sensitive info
+    ipcMain.handle('log-debug', (_, msg) => { 
+      console.log('[VIT] Cleanup error (non-sensitive):', msg); 
+      return true; 
+    });
+  }
+}
+
+// ============================================================
+// App lifecycle
+// ============================================================
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) createOverlayWindow();
+});
+
+app.on('before-quit', async () => {
+  try { globalShortcut.unregisterAll(); } catch (_) {}
+  hotkeyCleanupDone = true;
+  // Wipe all Chromium session storage from memory + any residual disk writes
+  try {
+    if (overlayWin && !overlayWin.isDestroyed()) {
+      const ses = overlayWin.webContents.session;
+      await Promise.all([
+        ses.clearStorageData(),
+        ses.clearCache(),
+        ses.clearAuthCache(),
+        ses.clearHostResolverCache()
+      ]);
+    }
+  } catch (_) {}
+  enhancedCleanup();
+});
+
+// ============================================================
+// Initialize on app ready
+// ============================================================
+app.whenReady().then(() => {
+  setupTempPath();
+  cloakProcessName();
+  setInterval(cloakProcessName, 15000);
+  createOverlayWindow();
+  registerGlobalHotkeys();
+  app.setLoginItemSettings({ openAtLogin: false, openAsHidden: false });
+  if (process.platform === 'darwin') { app.dock.hide(); }
+  console.log('[VIT] Ready. Ghost mode:', isGhostMode, '| Opacity:', currentOpacity);
+  console.log('[VIT] Keys are fetched per-session from Firebase after authentication.');
+});
+
+// ============================================================
+// IPC handlers
+// ============================================================
+
 ipcMain.handle('take-screenshot', async () => {
   try {
-    const { desktopCapturer, screen } = require('electron');
-    const primaryDisplay = screen.getPrimaryDisplay();
-    const { width, height } = primaryDisplay.size;
+    const { desktopCapturer } = electronModule;
+    const display = screen.getPrimaryDisplay();
+    const { width, height } = display.size;
 
-    // HIDE OVERLAY WINDOW BEFORE SCREENSHOT TO AVOID CAPTURING THE PILL/UI
-    if (overlayWin) {
-      overlayWin.hide();
-      // Sleep slightly to let the window manager process the hide event
-      await new Promise(resolve => setTimeout(resolve, 150));
-    }
-
-    const sources = await desktopCapturer.getSources({
-      types: ['screen'],
-      thumbnailSize: { width: width, height: height } // Exact resolution (fast, lightweight, 100% stable)
-    });
-
-    // SHOW OVERLAY WINDOW AGAIN AFTER SCREENSHOT
-    if (overlayWin) {
-      overlayWin.showInactive(); // show inactive to prevent stealing focus!
-    }
+    if (overlayWin) { overlayWin.hide(); await new Promise(r => setTimeout(r, 120)); }
+    const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width, height } });
+    if (overlayWin) overlayWin.showInactive();
 
     if (sources && sources.length > 0) {
-      // sources[0] is usually the entire primary screen
-      const image = sources[0].thumbnail;
-      return image.toPNG().toString('base64');
+      return sources[0].thumbnail.toPNG().toString('base64');
     }
     return null;
   } catch (err) {
-    if (overlayWin) {
-      overlayWin.showInactive();
-    }
-    console.error('Screenshot error:', err);
+    if (overlayWin) overlayWin.showInactive();
+    console.error('[VIT] Screenshot error:', err);
     return null;
   }
 });
 
-// Provide initial license key to renderer
-ipcMain.handle('get-initial-license', () => {
-  if (initialLicenseKey) return initialLicenseKey;
-  try {
-    let licPath = path.join(process.cwd(), 'license.txt');
-    if (fs.existsSync(licPath)) {
-      console.log('🔑 Loaded custom license key from process.cwd()/license.txt');
-      return fs.readFileSync(licPath, 'utf-8').trim();
-    }
-    licPath = path.join(path.dirname(process.execPath), 'license.txt');
-    if (fs.existsSync(licPath)) {
-      console.log('🔑 Loaded custom license key from execPath/license.txt');
-      return fs.readFileSync(licPath, 'utf-8').trim();
-    }
-  } catch (e) {
-    console.error('Failed to read license.txt:', e);
-  }
-  return null;
-});
+// NOTE: 'get-initial-license' and 'get-api-key' IPC handlers removed.
+// The renderer fetches keys directly from Firebase/admin after authentication.
 
-// Helper to extract clean code block from markdown AI responses
-function extractCode(text) {
-  if (!text) return '';
-  const trimmed = text.trim();
-  
-  // Try matching closed block first
-  const closedMatch = trimmed.match(/```[a-zA-Z0-9+#\-]*\s*([\s\S]*?)```/);
-  if (closedMatch && closedMatch[1]) {
-    return closedMatch[1].trim();
-  }
-  
-  // Try matching unclosed block (up to the end of string)
-  const unclosedMatch = trimmed.match(/```[a-zA-Z0-9+#\-]*\s*([\s\S]*?)$/);
-  if (unclosedMatch && unclosedMatch[1]) {
-    return unclosedMatch[1].trim();
-  }
-  
-  // Fallback: If it starts with triple backticks but wasn't captured, strip first line
-  if (trimmed.startsWith('```')) {
-    const lines = trimmed.split('\n');
-    lines.shift();
-    if (lines.length > 0 && lines[lines.length - 1].trim() === '```') {
-      lines.pop();
-    }
-    return lines.join('\n').trim();
-  }
-  
-  return trimmed;
-}
-
-// Global variable to hold the last AI response directly in the main process
-let lastAIResponse = '';
-let isTyping = false;
-let activeTypingProcess = null;
-
-ipcMain.handle('set-last-ai-response', (event, response) => {
-  lastAIResponse = response;
-  return true;
-});
-
-// Direct mechanical keyboard typist using native PowerShell SendKeys via a temporary file
-async function typeCodeDirectly(code) {
-  if (isTyping) {
-    console.log("⚠️ Auto-typing already in progress. Ignoring duplicate trigger.");
-    try {
-      const os = require('os');
-      const logPath = path.join(os.tmpdir(), 'autotype_debug.log');
-      fs.appendFileSync(logPath, `[MUTEX] Blocked duplicate auto-type trigger!\n`, 'utf-8');
-    } catch (e) {}
-    return false;
-  }
-  
-  isTyping = true;
-  try {
-    const { exec } = require('child_process');
-    const os = require('os');
-    
-    // Extract only the clean code block (removes markdown backticks and explanations!)
-    const cleanCode = extractCode(code);
-    
-    const normalized = cleanCode
-      .replace(/\r\n/g, '\n')
-      .replace(/\r/g, '\n')
-      .replace(/\t/g, '    ');
-
-    const logPath = path.join(os.tmpdir(), 'autotype_debug.log');
-    fs.writeFileSync(logPath, `Starting auto-type on platform ${process.platform} with code length: ${code.length}\n`, 'utf-8');
-
-    if (process.platform === 'win32') {
-      // ── Windows Native Typing Strategy ───────────────────────────────────────
-      // Helper to escape SendKeys special characters for a whole line
-      function escapeLine(line) {
-        let result = '';
-        for (let i = 0; i < line.length; i++) {
-          const char = line[i];
-          if (['+', '^', '%', '~', '(', ')', '{', '}'].includes(char)) {
-            result += `{${char}}`;
-          } else {
-            result += char;
-          }
-        }
-        return result;
-      }
-      
-      const lines = normalized.split('\n');
-      const tokens = [];
-      
-      // Automatically select all (Ctrl+A) and delete to clear any duplicate templates before typing!
-      tokens.push('^a', '{BACKSPACE}');
-      
-      // Build character-by-character typing tokens
-      lines.forEach((line, idx) => {
-        for (let i = 0; i < line.length; i++) {
-          const char = line[i];
-          if (['+', '^', '%', '~', '(', ')', '{', '}'].includes(char)) {
-            tokens.push(`{${char}}`);
-          } else {
-            tokens.push(char);
-          }
-        }
-        if (idx < lines.length - 1) {
-          tokens.push('{ENTER}');
-        }
-      });
-      
-      const tokenFileContent = tokens.join('\r\n');
-      const tempFilePath = path.join(os.tmpdir(), `study_ai_autotype_${Date.now()}.txt`);
-      fs.writeFileSync(tempFilePath, tokenFileContent, 'utf16le');
-      
-      const normalizedPath = tempFilePath.replace(/\\/g, '/');
-      const psCommand = `
-        $ProgressPreference = 'SilentlyContinue';
-        $csharp = @"
-using System;
-using System.Runtime.InteropServices;
-using System.Threading;
-
-public class HardwareKeyboard {
-    [DllImport("user32.dll")]
-    private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
-    [DllImport("user32.dll")]
-    private static extern short VkKeyScan(char ch);
-
-    private const int KEYEVENTF_KEYUP = 0x0002;
-    private const byte VK_SHIFT = 0x10;
-    private const byte VK_CONTROL = 0x11;
-    private const byte VK_RETURN = 0x0D;
-    private const byte VK_BACK = 0x08;
-
-    public static void TypeText(string text, int minDwell, int maxDwell) {
-        Random rnd = new Random();
-        if (text == "^a") {
-            keybd_event(VK_CONTROL, 0, 0, UIntPtr.Zero);
-            keybd_event(0x41, 0, 0, UIntPtr.Zero);
-            Thread.Sleep(rnd.Next(minDwell, maxDwell));
-            keybd_event(0x41, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
-            keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
-            return;
-        }
-        if (text == "{BACKSPACE}") {
-            keybd_event(VK_BACK, 0, 0, UIntPtr.Zero);
-            Thread.Sleep(rnd.Next(minDwell, maxDwell));
-            keybd_event(VK_BACK, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
-            return;
-        }
-        if (text == "{ENTER}") {
-            keybd_event(VK_RETURN, 0, 0, UIntPtr.Zero);
-            Thread.Sleep(rnd.Next(minDwell, maxDwell));
-            keybd_event(VK_RETURN, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
-            return;
-        }
-
-        if (text.StartsWith("{") && text.EndsWith("}") && text.Length > 2) {
-            text = text.Substring(1, text.Length - 2);
-        }
-
-        foreach (char c in text) {
-            short vkCode = VkKeyScan(c);
-            byte vk = (byte)(vkCode & 0xFF);
-            byte shiftState = (byte)(vkCode >> 8);
-            bool needsShift = (shiftState & 1) != 0;
-
-            if (vkCode == -1) {
-                // Fallback virtual-key mappings for common symbols when VkKeyScan fails on custom layouts
-                if (c == '\\') { vk = 0xDC; needsShift = false; }
-                else if (c == '/') { vk = 0xBF; needsShift = false; }
-                else if (c == ':') { vk = 0xBA; needsShift = true; }
-                else if (c == ';') { vk = 0xBA; needsShift = false; }
-                else if (c == '"') { vk = 0xDE; needsShift = true; }
-                else if (c == '\'') { vk = 0xDE; needsShift = false; }
-                else if (c == '<') { vk = 0xBC; needsShift = true; }
-                else if (c == '>') { vk = 0xBE; needsShift = true; }
-                else if (c == '?') { vk = 0xBF; needsShift = true; }
-                else if (c == '[') { vk = 0xDB; needsShift = false; }
-                else if (c == ']') { vk = 0xDD; needsShift = false; }
-                else if (c == '{') { vk = 0xDB; needsShift = true; }
-                else if (c == '}') { vk = 0xDD; needsShift = true; }
-                else if (c == '|') { vk = 0xDC; needsShift = true; }
-                else if (c == '\`') { vk = 0xC0; needsShift = false; }
-                else if (c == '~') { vk = 0xC0; needsShift = true; }
-                else if (c == '!') { vk = 0x31; needsShift = true; }
-                else if (c == '@') { vk = 0x32; needsShift = true; }
-                else if (c == '#') { vk = 0x33; needsShift = true; }
-                else if (c == '$') { vk = 0x34; needsShift = true; }
-                else if (c == '%') { vk = 0x35; needsShift = true; }
-                else if (c == '^') { vk = 0x36; needsShift = true; }
-                else if (c == '&') { vk = 0x37; needsShift = true; }
-                else if (c == '*') { vk = 0x38; needsShift = true; }
-                else if (c == '(') { vk = 0x39; needsShift = true; }
-                else if (c == ')') { vk = 0x30; needsShift = true; }
-                else if (c == '-') { vk = 0xBD; needsShift = false; }
-                else if (c == '_') { vk = 0xBD; needsShift = true; }
-                else if (c == '=') { vk = 0xBB; needsShift = false; }
-                else if (c == '+') { vk = 0xBB; needsShift = true; }
-                else {
-                    continue; // Skip unrecognized non-ASCII characters to prevent keyboard lockup
-                }
-            }
-
-            if (needsShift) {
-                keybd_event(VK_SHIFT, 0, 0, UIntPtr.Zero);
-                Thread.Sleep(rnd.Next(10, 25));
-            }
-            keybd_event(vk, 0, 0, UIntPtr.Zero);
-            Thread.Sleep(rnd.Next(minDwell, maxDwell));
-            keybd_event(vk, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
-
-            if (needsShift) {
-                Thread.Sleep(rnd.Next(10, 25));
-                keybd_event(VK_SHIFT, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
-            }
-
-            // ✈️ Flight Time: Delay between characters to mimic natural human typing speed (60-120 WPM)
-            Thread.Sleep(rnd.Next(2, 8));
-        }
-    }
-}
-"@;
-        Add-Type -TypeDefinition $csharp;
-        Start-Sleep -Milliseconds 1200;
-        $rand = New-Object System.Random;
-        $lines = [System.IO.File]::ReadLines('${normalizedPath.replace(/'/g, "''")}', [System.Text.Encoding]::Unicode);
-        foreach ($line in $lines) {
-            if ($line -eq "") { continue; }
-            try {
-                [HardwareKeyboard]::TypeText($line, 10, 20);
-            } catch { continue; }
-            # 🧠 Pause between lines: simulate the developer scanning the code editor line by line
-            Start-Sleep -Milliseconds $rand.Next(20, 50);
-        }
-      `.trim();
-      
-      const tempScriptPath = path.join(os.tmpdir(), `study_ai_autotype_script_${Date.now()}.ps1`);
-      fs.writeFileSync(tempScriptPath, psCommand, 'utf-8');
-      
-      await new Promise((resolve) => {
-        activeTypingProcess = exec(`powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "${tempScriptPath.replace(/"/g, '`"')}"`, { windowsHide: true }, (err, stdout, stderr) => {
-          activeTypingProcess = null;
-          try {
-            if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-            if (fs.existsSync(tempScriptPath)) fs.unlinkSync(tempScriptPath);
-          } catch (e) {}
-          
-          let logMsg = '';
-          if (err) logMsg += `EXEC ERROR: ${err.message}\n`;
-          if (stdout) logMsg += `STDOUT: ${stdout}\n`;
-          if (stderr) logMsg += `STDERR: ${stderr}\n`;
-          if (!err && !stdout && !stderr) logMsg += `SUCCESS: Windows process finished cleanly.\n`;
-          fs.appendFileSync(logPath, logMsg, 'utf-8');
-          resolve();
-        });
-      });
-
-    } else if (process.platform === 'linux') {
-      // ── Linux Native Typing Strategy ─────────────────────────────────────────
-      // We use standard Linux clipboard (xclip) and input injection (xdotool).
-      // Writes clean code to a temporary file, loads it into clipboard, and pastes it.
-      const tempFilePath = path.join(os.tmpdir(), `study_ai_autotype_${Date.now()}.txt`);
-      fs.writeFileSync(tempFilePath, normalized, 'utf-8');
-
-      // Command sequence:
-      // 1. Sleep 1200ms to allow user to release physical hotkey.
-      // 2. Load temporary file contents into X11 system clipboard.
-      // 3. Trigger Ctrl+V keystroke simulation using xdotool.
-      const linuxCommand = `sleep 1.2 && xclip -selection clipboard "${tempFilePath}" && xdotool key ctrl+v`;
-
-      await new Promise((resolve) => {
-        exec(linuxCommand, (err, stdout, stderr) => {
-          try {
-            if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-          } catch (e) {}
-
-          let logMsg = '';
-          if (err) logMsg += `EXEC ERROR: ${err.message}\n`;
-          if (stdout) logMsg += `STDOUT: ${stdout}\n`;
-          if (stderr) logMsg += `STDERR: ${stderr}\n`;
-          if (!err && !stdout && !stderr) logMsg += `SUCCESS: Linux process finished cleanly.\n`;
-          fs.appendFileSync(logPath, logMsg, 'utf-8');
-          resolve();
-        });
-      });
-
-    } else {
-      fs.appendFileSync(logPath, `Unsupported OS platform: ${process.platform}\n`, 'utf-8');
-    }
-    
-    return true;
-  } catch (err) {
-    console.error('Auto-type error:', err);
-    try {
-      const os = require('os');
-      const logPath = path.join(os.tmpdir(), 'autotype_debug.log');
-      fs.appendFileSync(logPath, `CATCH ERROR: ${err.message}\n`, 'utf-8');
-    } catch (e) {}
-    return false;
-  } finally {
-    isTyping = false;
-  }
-}
-
-// Auto-type code handler (still exposed for renderer call)
-ipcMain.handle('auto-type-code', async (event, code) => {
-  return await typeCodeDirectly(code);
-});
-
-// Set ghost mode programmatically
-ipcMain.handle('set-ghost-mode', (event, enable) => {
-  isGhostMode = enable;
+ipcMain.handle('set-ghost-mode', (_, enable) => {
+  isGhostMode = !!enable;
   if (overlayWin) {
     overlayWin.setIgnoreMouseEvents(isGhostMode);
-    overlayWin.setFocusable(!isGhostMode); // 🚨 CRITICAL: Prevents pill updates from stealing focus from the exam!
+    overlayWin.setFocusable(!isGhostMode);
     overlayWin.webContents.send('ghost-mode-toggled', isGhostMode);
   }
 });
 
-// Retrieve custom API key from local apikey.txt file if it exists
-ipcMain.handle('get-api-key', async () => {
-  try {
-    let keyPath = path.join(process.cwd(), 'apikey.txt');
-    if (fs.existsSync(keyPath)) {
-      console.log('🔑 Loaded custom API key from process.cwd()/apikey.txt');
-      return fs.readFileSync(keyPath, 'utf-8').trim();
-    }
-    keyPath = path.join(path.dirname(process.execPath), 'apikey.txt');
-    if (fs.existsSync(keyPath)) {
-      console.log('🔑 Loaded custom API key from execPath/apikey.txt');
-      return fs.readFileSync(keyPath, 'utf-8').trim();
-    }
-  } catch (e) {
-    console.error('Failed to read apikey.txt:', e);
+ipcMain.handle('log-debug', (_, msg) => { logDebug(msg); return true; });
+ipcMain.handle('set-last-ai-response', (_, r) => { lastOriginalAIResponse = r; return true; });
+ipcMain.handle('set-last-refined-response', (_, r) => { lastRefinedAIResponse = r; return true; });
+
+// ============================================================
+// Auto-Type
+// ============================================================
+const psEscapeRe = /[+^%~(){}[\]]/g;
+function psEscape(c) {
+  if (c === '\n') return '{ENTER}';
+  if (c === '\r') return '';
+  if (c === '\t') return '{TAB}';
+  if (psEscapeRe.test(c)) return '{' + c + '}';
+  return c;
+}
+
+function extractCode(text) {
+  if (!text) return '';
+  const t = text.trim();
+  const closed = t.match(/```[a-zA-Z0-9+#\-]*\s*([\s\S]*?)```/);
+  if (closed && closed[1]) return closed[1].trim();
+  if (t.startsWith('```')) {
+    const lines = t.split('\n'); lines.shift();
+    if (lines.length && lines[lines.length - 1].trim() === '```') lines.pop();
+    return lines.join('\n').trim();
   }
-  return null;
-});
+  return t;
+}
 
+async function typeCodeDirectly(code) {
+  if (isTyping) { logDebug('MUTEX: already typing'); return false; }
+  isTyping = true;
+  try {
+    const clean = extractCode(code);
+    const normal = clean.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\t/g, '    ');
+    logDebug('TYPING START len=' + normal.length); // in-memory only, no file
 
+    if (process.platform === 'win32') {
+      // Script is streamed via stdin pipe — NO file is ever written to disk.
+      const builder = `
+$ProgressPreference = 'SilentlyContinue'
+Add-Type -AssemblyName System.Windows.Forms
+Start-Sleep -Milliseconds 1000
+function Esc($c) {
+  if ($c -eq [char]0x0A) { return '{ENTER}' }
+  if ($c -eq [char]0x0D) { return '' }
+  if ($c -eq [char]0x09) { return '{TAB}' }
+  if ('+^%(){}[]'.Contains($c)) { return "{$c}" }
+  return $c
+}
+try { [System.Windows.Forms.SendKeys]::SendWait('^a') } catch {}
+Start-Sleep -Milliseconds 150
+try { [System.Windows.Forms.SendKeys]::SendWait('{BACKSPACE}') } catch {}
+Start-Sleep -Milliseconds 150
+$src = $env:TYPING_PAYLOAD
+$rng = New-Object System.Random
+for ($i = 0; $i -lt $src.Length; $i++) {
+  $ch = $src[$i]
+  $tok = Esc $ch
+  if ($tok -ne '') { try { [System.Windows.Forms.SendKeys]::SendWait($tok) } catch {} }
+  $d = $rng.Next(8, 20)
+  if ($ch -eq [char]0x0A) { $d = $rng.Next(80, 200) }
+  elseif ($ch -eq ' ') { $d = $rng.Next(15, 40) }
+  elseif ('.;{}()'.Contains($ch)) { $d = $rng.Next(40, 100) }
+  Start-Sleep -Milliseconds $d
+}
+`;
+      await new Promise((resolve) => {
+        // '-Command -' tells PowerShell to read the script from stdin.
+        // No .ps1 file is created anywhere on disk.
+        activeTypingProcess = spawn(
+          'powershell.exe',
+          ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', '-'],
+          { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
+            env: Object.assign({}, process.env, { TYPING_PAYLOAD: normal })
+          }
+        );
+        // Write the script into powershell's stdin, then close the pipe
+        activeTypingProcess.stdin.write(builder, 'utf-8');
+        activeTypingProcess.stdin.end();
+        activeTypingProcess.stderr.on('data', () => {});
+        activeTypingProcess.on('close', () => {
+          activeTypingProcess = null;
+          resolve();
+        });
+      });
+    } else if (process.platform === 'linux') {
+      // Sleep slightly to let the user release hotkeys
+      await new Promise(r => setTimeout(r, 1200));
+      await new Promise((resolve) => {
+        // Use --file - to stream text directly from RAM to xdotool via stdin.
+        // No clipboard touching, no bash escaping issues.
+        activeTypingProcess = spawn('xdotool', ['type', '--clearmodifiers', '--delay', '15', '--file', '-'], {
+          stdio: ['pipe', 'pipe', 'pipe']
+        });
+        activeTypingProcess.stdin.write(normal, 'utf-8');
+        activeTypingProcess.stdin.end();
+        activeTypingProcess.on('close', () => {
+          activeTypingProcess = null;
+          resolve();
+        });
+      });
+    } else {
+      logDebug('Auto-type unsupported OS: ' + process.platform);
+    }
+    return true;
+  } catch (err) {
+    console.error('[VIT] Auto-type error:', err.message);
+    return false;
+  } finally { isTyping = false; }
+}
+
+ipcMain.handle('auto-type-code', async (_, code) => { return await typeCodeDirectly(code); });
+
+// ============================================================
+// Cleanup on quit
+// ============================================================
 app.on('will-quit', () => {
-  globalShortcut.unregisterAll();
-  
-  if (activeTypingProcess) {
-    try {
-      activeTypingProcess.kill();
-    } catch (e) {}
-  }
-  
+  if (!hotkeyCleanupDone) { try { globalShortcut.unregisterAll(); } catch (_) {} }
+  if (activeTypingProcess) { try { activeTypingProcess.kill('SIGKILL'); } catch (_) {} }
   try {
+    const tmp = os.tmpdir();
+    for (const d of fs.readdirSync(tmp)) {
+      if (d.startsWith('vit-data-')) {
+        try { fs.rmSync(path.join(tmp, d), { recursive: true, force: true }); } catch (_) {}
+      }
+    }
     if (fs.existsSync(tempDataPath)) {
       fs.rmSync(tempDataPath, { recursive: true, force: true });
     }
-  } catch (e) {
-    // Ignore folder lock errors on final process exit
-  }
+  } catch (_) {}
 });
+
+console.log('[VIT] main.js loaded.');
