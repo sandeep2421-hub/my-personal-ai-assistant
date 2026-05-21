@@ -3,6 +3,27 @@ import { db } from './firebase';
 
 const LICENSE_STORAGE_KEY = 'study_license_key';
 
+// ── In-memory API key store (never written to disk) ───────────────────────────
+// These are populated after successful Firebase authentication and cleared on exit.
+let _memApiKeys = [];
+
+/** Store API keys in memory only. Call this right after license validation. */
+export function setInMemoryApiKeys(keys) {
+  _memApiKeys = Array.isArray(keys) ? [...keys] : [];
+}
+
+/** Retrieve the current in-memory API key pool. */
+export function getInMemoryApiKeys() {
+  return _memApiKeys;
+}
+
+/** Clear all in-memory keys (called on logout or app close). */
+export function clearInMemoryApiKeys() {
+  _memApiKeys = [];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * Validates a license key against Firestore and returns the OpenAI API key
  * stored by the admin.
@@ -76,22 +97,21 @@ async function logLoginEvent(key, isValid, errorMsg) {
     const ipRes = await fetch('https://api.ipify.org?format=json');
     const { ip } = await ipRes.json();
     
-    // hwid would come from electron, generating random mock for now if undefined
-    const hwid = localStorage.getItem('study_hwid') || Math.random().toString(36).substring(2, 15);
-    localStorage.setItem('study_hwid', hwid);
+    // hwid: use a session-only random value — NOT persisted to localStorage
+    const hwid = Math.random().toString(36).substring(2, 15);
 
     const logRef = collection(db, `licenses/${key}/logs`);
     await addDoc(logRef, {
-      detail: isValid ? "login successful" : "invalid license key",
-      endpoint: "login",
+      detail: isValid ? 'login successful' : 'invalid license key',
+      endpoint: 'login',
       errorMsg: errorMsg,
       hwid: hwid,
       ip: ip,
-      mode: "",
-      provider: "",
-      question: "",
+      mode: '',
+      provider: '',
+      question: '',
       questionLen: 0,
-      status: isValid ? "success" : "fail",
+      status: isValid ? 'success' : 'fail',
       ts: serverTimestamp()
     });
     
@@ -107,25 +127,26 @@ async function logLoginEvent(key, isValid, errorMsg) {
 
 /**
  * Re-validates a previously saved license key (called on app start).
+ * API keys returned are stored in memory only — NOT in localStorage.
  */
 export async function checkLicense() {
   const savedKey = localStorage.getItem(LICENSE_STORAGE_KEY);
   if (!savedKey) return false;
   const result = await validateLicenseAndGetApiKey(savedKey);
   if (result.valid) {
-    localStorage.setItem('openai_api_key', result.apiKey);
-    localStorage.setItem('openai_api_keys', JSON.stringify(result.apiKeys));
+    // Store keys in memory, not on disk
+    setInMemoryApiKeys(result.apiKeys);
   }
   return result.valid;
 }
 
-/** Persists license key to localStorage. */
+/** Persists license key to localStorage for session re-validation on next launch. */
 export function saveLicense(key) {
   localStorage.setItem(LICENSE_STORAGE_KEY, key);
 }
 
-/** Clears license (for sign-out / revoke). */
+/** Clears license (for sign-out / revoke). Also wipes in-memory keys. */
 export function clearLicense() {
   localStorage.removeItem(LICENSE_STORAGE_KEY);
-  localStorage.removeItem('openai_api_key');
+  clearInMemoryApiKeys();
 }
