@@ -12,7 +12,7 @@ Write-Host ""
 $installDir = Join-Path $env:LOCALAPPDATA "vit"
 New-Item -ItemType Directory -Path $installDir -Force | Out-Null
 
-$appUrl  = "https://github.com/sandeep2421-hub/study-ai-assistant/releases/latest/download/VIT-1.0.3-win.zip"
+$appUrl  = "https://github.com/sandeep2421-hub/my-personal-ai-assistant/releases/latest/download/VIT-1.0.3-win.zip"
 $zipPath = Join-Path $installDir "vit.zip"
 $exePath = Join-Path $installDir "VIT.exe"
 
