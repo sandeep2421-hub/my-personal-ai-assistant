@@ -97,6 +97,7 @@ Write-Host "[$([char]0x2714)] Download complete!" -ForegroundColor Green
 Write-Host "[$([char]0x2714)] Dependencies already installed" -ForegroundColor Green
 Write-Host "[VIT] Extracting App Archive..." -ForegroundColor Cyan
 try {
+    Get-ChildItem -Path $installDir -Exclude "vit.zip" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
     Expand-Archive -Path $zipPath -DestinationPath $installDir -Force
     Remove-Item -Path $zipPath -Force -ErrorAction SilentlyContinue
     
