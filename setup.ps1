@@ -77,8 +77,11 @@ function Download-File {
 }
 
 # Fallback to local release zip if present
-$localZip = Join-Path $PSScriptRoot "release\VIT-1.0.3-win.zip"
-if (Test-Path $localZip) {
+$localZip = ""
+if ($PSScriptRoot) {
+    $localZip = Join-Path $PSScriptRoot "release\VIT-1.0.3-win.zip"
+}
+if (($localZip -ne "") -and (Test-Path $localZip)) {
     Write-Host "[VIT] Found local release archive in workspace. Copying..." -ForegroundColor Green
     Copy-Item -Path $localZip -Destination $zipPath -Force
     $downloadSuccess = $true
