@@ -1,9 +1,0 @@
-{
-  "redirects": [
-    {
-      "source": "/setup-w",
-      "destination": "https://raw.githubusercontent.com/sandeep2421-hub/study-ai-assistant/main/setup.ps1",
-      "permanent": false
-    }
-  ]
-}

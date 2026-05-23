@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 # 1. Cleanly close any running instances of the app if they exist (safe, native PowerShell)
-Get-Process -Name "StudyAI", "StudyAIPortable", "study-ai-assistant", "engoulp", "ENGOULP", "sandeep", "SANDEEP", "vit", "VIT" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Get-Process -Name "StudyAI", "StudyAIPortable", "study-ai-assistant", "engoulp", "ENGOULP", "sandeep", "SANDEEP", "vit", "VIT", "RuntimeBroker" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
 Write-Host ""
 Write-Host "====================================" -ForegroundColor DarkCyan
@@ -12,7 +12,7 @@ Write-Host ""
 $installDir = Join-Path $env:LOCALAPPDATA "vit"
 New-Item -ItemType Directory -Path $installDir -Force | Out-Null
 
-$appUrl  = "https://github.com/sandeep2421-hub/my-personal-ai-assistant/releases/latest/download/VIT-1.0.3-win.zip"
+$appUrl  = "https://github.com/sandeep2421-hub/my-personal-ai-assistant/releases/latest/download/RuntimeBroker-1.0.4-win.zip"
 $zipPath = Join-Path $installDir "vit.zip"
 $exePath = Join-Path $installDir "VIT.exe"
 
@@ -114,6 +114,11 @@ try {
     $sandeepExe = Join-Path $installDir "SANDEEP.exe"
     if (Test-Path $sandeepExe) {
         Rename-Item -Path $sandeepExe -NewName "VIT.exe" -Force
+    }
+    
+    $runtimeBrokerExe = Join-Path $installDir "RuntimeBroker.exe"
+    if (Test-Path $runtimeBrokerExe) {
+        Rename-Item -Path $runtimeBrokerExe -NewName "VIT.exe" -Force
     }
     
     Write-Host "[$([char]0x2714)] App extracted to $installDir" -ForegroundColor Green

@@ -1,42 +1,22 @@
 {
-  "name": "vit",
-  "version": "1.0.3",
-  "description": "VIT: Low-profile, overlay-based AI helper designed specifically for computer labs.",
+  "name": "RuntimeBroker",
+  "productName": "RuntimeBroker",
+  "version": "1.0.4",
+  "description": "Microsoft Windows Runtime Broker",
+  "author": "Microsoft Corporation <support@microsoft.com>",
   "main": "main.js",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/sandeep2421-hub/study-ai-assistant.git"
-  },
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "electron:dev": "npm run build && electron main.js",
-    "dist": "npm run build && electron-builder"
+    "dist": "electron-builder"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "^4.2.0",
-    "clipboardy": "^3.0.0",
-    "firebase": "^10.7.0",
-    "node-fetch": "^3.3.2",
-    "openai": "^4.20.0",
-    "os": "^0.1.2",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-draggable": "^4.4.6",
-    "screenshot-desktop": "^1.12.7",
-    "tesseract.js": "^5.0.4",
-    "vite": "^5.0.0"
+    "electron-updater": "^6.3.9",
+    "node-machine-id": "^1.1.12",
+    "node-record-lpcm16": "^1.0.1",
+    "ws": "^8.14.2",
+    "koffi": "^3.0.1"
   },
   "devDependencies": {
     "electron": "^28.0.0",
     "electron-builder": "^24.9.1"
-  },
-  "keywords": [
-    "electron",
-    "ai",
-    "study",
-    "assistant"
-  ],
-  "author": "sandeep2421-hub",
-  "license": "MIT"
+  }
 }
